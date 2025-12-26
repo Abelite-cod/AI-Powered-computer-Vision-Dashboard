@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebSocket Detection Test</title>
+</head>
+<body>
+  <h2>WebSocket Detection Test</h2>
+
+  <button onclick="start()">Start Stream</button>
+  <button onclick="stop()">Stop Stream</button>
+
+  <pre id="log"></pre>
+
+  <script>
+    let ws;
+    let interval;
+    const log = document.getElementById("log");
+
+    function start() {
+      ws = new WebSocket("ws://127.0.0.1:8000/ws/detections");
+
+      ws.onopen = () => {
+        log.innerText += "✅ Connected\n";
+
+        // send dummy frames every second
+        interval = setInterval(sendDummyFrame, 1000);
+      };
+
+      ws.onmessage = (event) => {
+        log.innerText += "📩 " + event.data + "\n";
+      };
+
+      ws.onerror = () => {
+        log.innerText += "❌ WebSocket error\n";
+      };
+
+      ws.onclose = () => {
+        log.innerText += "🛑 Connection closed\n";
+      };
+    }
+
+    function sendDummyFrame() {
+      // create a fake black image
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 240;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(blob => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(blob); // backend expects bytes
+        }
+      }, "image/jpeg");
+    }
+
+    function stop() {
+      if (interval) clearInterval(interval);
+      if (ws) ws.close();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebSocket Tracking Test</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    canvas, video { position: absolute; top: 0; left: 0; }
+    #controls { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.5); color: #fff; padding: 8px; border-radius: 5px; }
+    button { margin-right: 5px; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn">Stop</button>
+  </div>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    let ws, interval;
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+
+    startBtn.onclick = startStream;
+    stopBtn.onclick = stopStream;
+
+    async function startStream() {
+      // Start camera
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+
+      ws = new WebSocket("ws://127.0.0.1:8000/ws/detections");
+
+      ws.onopen = () => console.log("✅ WebSocket connected");
+      ws.onclose = () => console.log("🛑 WebSocket disconnected");
+      ws.onerror = (err) => console.error("❌ WebSocket error", err);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const tracked = data.detections || [];
+
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Draw video frame
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Draw tracked boxes
+        ctx.lineWidth = 2;
+        ctx.font = "16px Arial";
+
+        tracked.forEach(det => {
+          const [x1, y1, x2, y2] = det.bbox;
+          ctx.strokeStyle = "lime";
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+          ctx.fillStyle = "lime";
+          ctx.fillText(
+            `${det.class_name} (${det.confidence.toFixed(2)}) [ID:${det.track_id}]`,
+            x1,
+            y1 - 5
+          );
+        });
+      };
+
+      // Send frames ~10 FPS
+      video.addEventListener("loadeddata", () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        interval = setInterval(() => {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(blob => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(blob);
+          }, "image/jpeg");
+        }, 100);
+      });
+    }
+
+    function stopStream() {
+      if (interval) clearInterval(interval);
+      if (ws) ws.close();
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+      }
+    }
+  </script>
+</body>
+</html>
