@@ -91,13 +91,27 @@ ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
   const detections = data.detections || [];
 
+  const fw = data.frame_width;
+  const fh = data.frame_height;
+
+  if (!fw || !fh) return;
+  const scaleX = canvas.width / fw;
+  const scaleY = canvas.height / fh;
+
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
 
   ctx.lineWidth = 2;
   ctx.font = "14px Arial";
 
   detections.forEach(det => {
-    const [x1, y1, x2, y2] = det.bbox;
+    let [x1, y1, x2, y2] = det.bbox;
+
+    //scale
+    x1 *= scaleX;
+    x2 *= scaleY;
+    y1 *= scaleY;
+    y2 *= scaleY;
 
     ctx.strokeStyle = "#00ff00";
     ctx.fillStyle = "#00ff00";

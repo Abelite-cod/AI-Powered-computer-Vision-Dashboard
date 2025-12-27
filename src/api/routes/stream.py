@@ -8,7 +8,7 @@ from src.runtime.utils import draw_boxes, format_results
 router = APIRouter()
 loader = ModelLoader()
 
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+cap = cv2.VideoCapture(0)
 
 def generate_frames():
     while True:

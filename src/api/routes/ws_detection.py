@@ -39,7 +39,7 @@ async def websocket_detections(ws: WebSocket):
             if frame is None:
                 await ws.send_json({"error": "Invalid frame"})
                 continue
-
+            h, w = frame.shape[:2]
             results = loader.predict(frame)
             detections = format_results([results], loader.class_names)
             mot_detections = [Detection(box=det["bbox"], score=det["confidence"], class_id=det["class_id"])
@@ -73,7 +73,7 @@ async def websocket_detections(ws: WebSocket):
                     "track_id": tid
                 })
 
-            await ws.send_json({"detections": tracked_objects, "count": len(tracked_objects)})
+            await ws.send_json({"detections": tracked_objects, "count": len(tracked_objects), 'frame_width': w, 'frame_height': h})
             await asyncio.sleep(0.03)
     except WebSocketDisconnect:
         print("WebSocket disconnected")
