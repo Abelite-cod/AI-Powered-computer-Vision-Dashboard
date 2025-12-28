@@ -9,3 +9,4 @@ torchaudio
 ultralytics
 motpy
 websockets
+PyJWT

@@ -4,3 +4,4 @@ logs/
 *.logs
 /venv
 .venv
+.venv/
