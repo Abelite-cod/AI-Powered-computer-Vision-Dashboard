@@ -2,64 +2,174 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>WebSocket Detection Test</title>
+  <title>AI Live Monitoring Dashboard</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+
+    #login {
+      position: absolute;
+      z-index: 10;
+      top: 20px;
+      left: 20px;
+      background: rgba(0,0,0,0.7);
+      padding: 15px;
+      border-radius: 6px;
+      color: white;
+    }
+
+    input, button {
+      padding: 6px;
+      margin: 4px 0;
+      width: 100%;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: none;
+    }
+
+    #stream {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+
+    #status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #0f0;
+      font-family: monospace;
+      font-size: 14px;
+      background: rgba(0,0,0,0.6);
+      padding: 6px 10px;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
-  <h2>WebSocket Detection Test</h2>
 
-  <button onclick="start()">Start Stream</button>
-  <button onclick="stop()">Stop Stream</button>
+<!-- LOGIN -->
+<div id="login">
+  <h3>Login</h3>
+  <input id="username" placeholder="Username">
+  <input id="password" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <div id="login-error" style="color:red;"></div>
+</div>
 
-  <pre id="log"></pre>
+<!-- DASHBOARD -->
+<div id="container">
+  <img id="stream" />
+  <canvas id="overlay"></canvas>
+  <div id="status">🟢 Connecting...</div>
+</div>
 
-  <script>
-    let ws;
-    let interval;
-    const log = document.getElementById("log");
+<script>
+let token = "";
+let ws = null;
 
-    function start() {
-      ws = new WebSocket("ws://127.0.0.1:8000/ws/detections");
+async function login() {
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
 
-      ws.onopen = () => {
-        log.innerText += "✅ Connected\n";
+  try {
+    const res = await fetch("http://127.0.0.1:8000/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
 
-        // send dummy frames every second
-        interval = setInterval(sendDummyFrame, 1000);
-      };
+    if (!res.ok) throw new Error("Invalid credentials");
 
-      ws.onmessage = (event) => {
-        log.innerText += "📩 " + event.data + "\n";
-      };
+    const data = await res.json();
+    token = data.access_token;
 
-      ws.onerror = () => {
-        log.innerText += "❌ WebSocket error\n";
-      };
+    document.getElementById("login").style.display = "none";
+    document.getElementById("container").style.display = "block";
 
-      ws.onclose = () => {
-        log.innerText += "🛑 Connection closed\n";
-      };
-    }
+    startStream();
+    startWebSocket();
 
-    function sendDummyFrame() {
-      // create a fake black image
-      const canvas = document.createElement("canvas");
-      canvas.width = 320;
-      canvas.height = 240;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "black";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } catch (e) {
+    document.getElementById("login-error").textContent = e.message;
+  }
+}
 
-      canvas.toBlob(blob => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(blob); // backend expects bytes
-        }
-      }, "image/jpeg");
-    }
+// MJPEG STREAM (token via query param)
+function startStream() {
+  const stream = document.getElementById("stream");
+  stream.src = `http://127.0.0.1:8000/api/stream?token=${token}`;
+}
 
-    function stop() {
-      if (interval) clearInterval(interval);
-      if (ws) ws.close();
-    }
-  </script>
+// WEBSOCKET (token via query param)
+function startWebSocket() {
+  const canvas = document.getElementById("overlay");
+  const ctx = canvas.getContext("2d");
+  const status = document.getElementById("status");
+
+  function resize() {
+    canvas.width = stream.clientWidth;
+    canvas.height = stream.clientHeight;
+  }
+
+  window.addEventListener("resize", resize);
+  stream.onload = resize;
+
+  ws = new WebSocket(`ws://127.0.0.1:8000/ws/detections?token=${token}`);
+
+  ws.onopen = () => status.textContent = "🟢 Secure Connection Established";
+  ws.onclose = () => status.textContent = "🔴 Connection Lost";
+  ws.onerror = () => status.textContent = "❌ WebSocket Error";
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    const detections = data.detections || [];
+
+    const fw = data.frame_width;
+    const fh = data.frame_height;
+    if (!fw || !fh) return;
+
+    const scaleX = canvas.width / fw;
+    const scaleY = canvas.height / fh;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 2;
+    ctx.font = "14px Arial";
+
+    detections.forEach(det => {
+      let [x1, y1, x2, y2] = det.bbox;
+
+      x1 *= scaleX;
+      y1 *= scaleY;
+      x2 *= scaleX;
+      y2 *= scaleY;
+
+      ctx.strokeStyle = "#00ff00";
+      ctx.fillStyle = "#00ff00";
+
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.fillText(`${det.class_name} [ID:${det.track_id}]`, x1, y1 - 6);
+    });
+  };
+}
+
+window.onbeforeunload = () => ws && ws.close();
+</script>
+
 </body>
 </html>

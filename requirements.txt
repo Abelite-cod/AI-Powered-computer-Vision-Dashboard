@@ -10,3 +10,5 @@ ultralytics
 motpy
 websockets
 PyJWT
+passlib[bcrypt] 
+python-dotenv
